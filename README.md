@@ -1,1 +1,0 @@
-# strokes-gained-app
