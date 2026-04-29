@@ -1,0 +1,146 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Crimson+Pro:wght@300;400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Archivo', sans-serif;
+  --font-body: 'Crimson Pro', serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  
+  /* Golf-inspired color palette */
+  --color-fairway: #16a34a;
+  --color-rough: #854d0e;
+  --color-sand: #f59e0b;
+  --color-water: #0ea5e9;
+  --color-green: #22c55e;
+  
+  /* Sage tones for sophistication */
+  --color-sage-50: #f6f7f6;
+  --color-sage-100: #e3e6e3;
+  --color-sage-200: #c7cdc7;
+  --color-sage-500: #637266;
+  --color-sage-800: #363d37;
+  --color-sage-900: #2e332f;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: linear-gradient(to bottom, #f6f7f6 0%, #ffffff 100%);
+  color: var(--color-sage-900);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-sage-50);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-sage-200);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-sage-500);
+}
+
+/* Button base styles */
+@layer components {
+  .btn-primary {
+    @apply bg-golf-fairway hover:bg-golf-green-700 text-white font-display font-semibold px-6 py-3 rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5;
+  }
+  
+  .btn-secondary {
+    @apply bg-sage-100 hover:bg-sage-200 text-sage-800 font-display font-semibold px-6 py-3 rounded-lg transition-all duration-200;
+  }
+  
+  .btn-outline {
+    @apply border-2 border-sage-300 hover:border-golf-fairway text-sage-800 hover:text-golf-fairway font-display font-semibold px-6 py-3 rounded-lg transition-all duration-200;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-sage-100 p-6 transition-all duration-200 hover:shadow-md;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-3 rounded-lg border border-sage-200 focus:border-golf-fairway focus:ring-2 focus:ring-golf-green-100 outline-none transition-all duration-200 font-body;
+  }
+  
+  .metric-card {
+    @apply bg-gradient-to-br from-white to-sage-50 rounded-xl p-6 border border-sage-100 shadow-sm;
+  }
+  
+  .stat-positive {
+    @apply text-golf-green-600 font-semibold;
+  }
+  
+  .stat-negative {
+    @apply text-red-600 font-semibold;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Stagger children animations */
+.stagger-children > * {
+  opacity: 0;
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.stagger-children > *:nth-child(1) { animation-delay: 0.1s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.2s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.3s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.4s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.5s; }
+.stagger-children > *:nth-child(6) { animation-delay: 0.6s; }
+
+/* Loading spinner */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  border: 3px solid var(--color-sage-100);
+  border-top-color: var(--color-fairway);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 0.8s linear infinite;
+}
