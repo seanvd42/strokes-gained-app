@@ -1,162 +1,196 @@
-# Strokes Gained Web Application
+# Golf Strokes Gained Analytics
 
-A modern, cloud-ready platform for ingesting, processing, and visualizing golf shot data with strokes gained analytics.
-
-## Architecture
-
-- **Frontend**: Next.js 14 (React) + Tailwind CSS
-- **Backend**: FastAPI (Python)
-- **Database & Auth**: Supabase (PostgreSQL)
-- **Infrastructure**: Docker Compose
-
-## Prerequisites
-
-- Docker Desktop
-- Node.js 18+ (for local development without Docker)
-- Python 3.11+ (for local development without Docker)
-- Supabase account (free tier available at https://supabase.com)
-
-## Quick Start
-
-### 1. Clone and Setup
-
-```bash
-git clone <repository-url>
-cd strokes-gained-app
-cp .env.example .env
-```
-
-### 2. Configure Supabase
-
-1. Create a new project at https://supabase.com
-2. Go to Project Settings > API
-3. Copy your project URL and keys to `.env`:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_KEY` (service role key)
-4. Go to Project Settings > Database
-5. Copy the connection string to `.env` as `DATABASE_URL`
-
-### 3. Initialize Database Schema
-
-Run the SQL commands from `backend/database/schema.sql` in your Supabase SQL Editor.
-
-### 4. Launch Application
-
-```bash
-# Start all services with Docker
-docker-compose up --build
-
-# Frontend will be available at http://localhost:3000
-# Backend API at http://localhost:8000
-# API docs at http://localhost:8000/docs
-```
-
-### 5. Development Without Docker
-
-**Backend:**
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm install
-npm run dev
-```
+A full-stack web application for analyzing golf performance using strokes gained methodology. Import your golf rounds from Garmin Connect or upload shot data manually to track your performance against PGA Tour, Scratch, or Bogey benchmarks.
 
 ## Features
 
-### MVP (Current)
-- ✅ Static landing page with marketing content
-- ✅ User authentication (email/password via Supabase)
-- ✅ Profile management (name, email, data source)
-- ✅ Interactive dashboard with:
-  - Shot details table
-  - Summary metrics
-  - Date range filtering
-  - Benchmark filtering
+- 🎯 **Strokes Gained Analysis** - Compare your performance against professional benchmarks
+- 📊 **Interactive Dashboard** - Visualize your strengths and weaknesses by category
+- ⛳ **Garmin Connect Integration** - Automatically import rounds from your Garmin device
+- 📈 **Performance Tracking** - Track improvement over time
+- 🏌️ **Shot-by-Shot Analysis** - Detailed breakdown of every shot
+- 🎨 **Beautiful UI** - Modern, responsive design optimized for golf analytics
 
-### Future Scope
-- Cloud deployment (Google Cloud Run)
-- Progressive Web App (PWA)
-- SSO integration (Google OAuth)
-- Additional data sources
-- Advanced visualizations (dispersion patterns, heat maps)
-- Mobile app (React Native)
+## Tech Stack
 
-## Project Structure
+### Frontend
+- **Next.js 14** - React framework with App Router
+- **TypeScript** - Type-safe development
+- **Tailwind CSS** - Utility-first styling
+- **Recharts** - Data visualization
+- **Lucide Icons** - Beautiful icons
 
-```
-strokes-gained-app/
-├── frontend/               # Next.js application
-│   ├── src/
-│   │   ├── app/           # App router pages
-│   │   ├── components/    # React components
-│   │   └── lib/           # Utilities and Supabase client
-│   └── public/            # Static assets
-├── backend/               # FastAPI application
-│   ├── app/
-│   │   ├── api/          # API routes
-│   │   ├── core/         # Core logic (strokes gained)
-│   │   ├── models/       # Data models
-│   │   └── services/     # Business logic
-│   └── database/         # SQL schemas
-└── docker-compose.yml    # Container orchestration
-```
+### Backend
+- **FastAPI** - Modern Python web framework
+- **Supabase** - PostgreSQL database with authentication
+- **Garmin Connect API** - Direct integration via garminconnect library
+- **Pydantic** - Data validation
 
-## Security
+## Prerequisites
 
-- **Row Level Security (RLS)**: Implemented at database level
-- **Authentication**: Supabase Auth with JWT tokens
-- **Secret Management**: Environment variables (never committed)
-- **CORS**: Configured for frontend domain only
+- Docker and Docker Compose
+- Node.js 18+ (for local development)
+- Python 3.11+ (for local development)
+- Garmin Connect account (optional, for automatic imports)
+
+## Quick Start with Docker
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd strokes-gained-app
+   ```
+
+2. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Configure your `.env` file** with your Supabase credentials:
+   ```env
+   # Get these from your Supabase project settings
+   NEXT_PUBLIC_SUPABASE_URL=https://tfoytmzdbpdhkrfkiura.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   SUPABASE_URL=https://tfoytmzdbpdhkrfkiura.supabase.co
+   SUPABASE_KEY=your-service-role-key
+   
+   # Database connection
+   DATABASE_URL=postgresql://postgres:your-password@db.tfoytmzdbpdhkrfkiura.supabase.co:5432/postgres
+   
+   # Generate a secret key
+   SECRET_KEY=$(openssl rand -hex 32)
+   
+   # API URL (use localhost for development)
+   NEXT_PUBLIC_API_URL=http://localhost:8000
+   
+   # Optional: Garmin Connect credentials (users can also provide via UI)
+   GARMIN_EMAIL=
+   GARMIN_PASSWORD=
+   ```
+
+4. **Build and start the containers**
+   ```bash
+   docker-compose build --no-cache
+   docker-compose up
+   ```
+
+5. **Access the application**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8000
+   - API Docs: http://localhost:8000/docs
+
+## Garmin Connect Integration
+
+### Automatic Import (Recommended)
+
+The app includes built-in Garmin Connect integration for seamless data import:
+
+1. **Navigate to Import Page** in the dashboard
+2. **Select "Garmin Connect"** import method
+3. **Enter your Garmin credentials**:
+   - Email address
+   - Password (if you use Google/Apple sign-in, set a password in Garmin account settings first)
+4. **Choose number of rounds** to import (1-20)
+5. **Select benchmark** (PGA Tour, Scratch, or Bogey)
+6. **Click "Fetch from Garmin Connect"**
+
+The app will:
+- Authenticate with Garmin Connect
+- Fetch your recent golf rounds
+- Parse all shot-by-shot data
+- Calculate strokes gained for each shot
+- Import everything into your dashboard
+
+**Note**: Your Garmin credentials are only used during the import request and are never stored.
+
+### Manual File Upload
+
+If you prefer to upload data manually or Garmin integration is unavailable:
+
+1. Export your round data from Garmin Connect
+2. Format it as JSON (see sample format in the import page)
+3. Upload via the "Upload File" option
 
 ## API Documentation
 
-Once running, visit http://localhost:8000/docs for interactive API documentation.
+Once the backend is running, visit http://localhost:8000/docs for interactive API documentation (Swagger UI).
 
-## Testing
+### Key Endpoints
 
-**Backend:**
-```bash
-cd backend
-pytest
-```
+#### Authentication
+- `POST /api/auth/signup` - Create new account
+- `POST /api/auth/signin` - Sign in
+- `POST /api/auth/signout` - Sign out
 
-**Frontend:**
-```bash
-cd frontend
-npm test
-```
+#### Shots
+- `GET /api/shots/` - List all shots
+- `POST /api/shots/` - Create single shot
+- `POST /api/shots/bulk` - Bulk import shots
+- `GET /api/shots/dashboard` - Dashboard analytics
+- `DELETE /api/shots/` - Delete all shots
 
-## Deployment
+#### Garmin
+- `GET /api/garmin/available` - Check if Garmin integration is available
+- `POST /api/garmin/connect` - Test Garmin credentials
+- `POST /api/garmin/fetch` - Fetch and import rounds from Garmin
 
-### Docker Production Build
+#### Profile
+- `GET /api/profile/me` - Get user profile
+- `PUT /api/profile/me` - Update profile
 
-```bash
-docker-compose -f docker-compose.prod.yml up --build
-```
+## Strokes Gained Methodology
 
-### Cloud Run (GCP)
+The app uses the strokes gained approach pioneered by Mark Broadie:
 
-```bash
-# Backend
-gcloud run deploy strokes-gained-api --source ./backend
+- **Driving**: Tee shots on par 4s and par 5s
+- **Approach**: Shots from fairway/rough to green (excluding 100 yards from hole on par 4s/5s)
+- **Short Game**: Shots within 100 yards of the hole (excluding putts)
+- **Putting**: All shots on the green
 
-# Frontend
-gcloud run deploy strokes-gained-web --source ./frontend
-```
+Each shot is compared against baseline data:
+- **PGA Tour**: Professional tour average
+- **Scratch**: 0 handicap golfer
+- **Bogey**: 18 handicap golfer
+
+## Troubleshooting
+
+### Backend won't start
+- Check that all environment variables are set correctly
+- Verify Supabase connection string is correct
+- Ensure PostgreSQL is accessible
+- Run: `docker-compose build --no-cache` to rebuild containers
+
+### Garmin import fails
+- Verify your Garmin credentials are correct
+- If you use Google/Apple sign-in, set a password in Garmin account settings
+- Check that you have golf activities in your Garmin Connect account
+- Make sure the garminconnect package is installed
+
+### Docker build fails
+- Clear Docker cache: `docker-compose build --no-cache`
+- Check that all ports (3000, 8000) are available
+- Ensure Docker has enough memory allocated
+
+### Frontend can't connect to backend
+- Check that NEXT_PUBLIC_API_URL is set correctly in .env
+- Verify backend is running on port 8000
+- Check CORS settings in backend
+
+## Next Steps
+
+After setup:
+
+1. **Create an account** at http://localhost:3000
+2. **Import your data** from Garmin Connect or upload a JSON file
+3. **Explore your dashboard** to see strokes gained analysis
+4. **Track your progress** over time
 
 ## License
 
-Proprietary - All Rights Reserved
+MIT License
 
-## Support
+## Acknowledgments
 
-For issues and questions, please contact support@strokesgained.app
+- Strokes Gained methodology by Mark Broadie
+- Garmin Connect API community
+- Baseline data from golf analytics research
