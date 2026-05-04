@@ -33,7 +33,7 @@ class GarminService:
         
     def authenticate(self, email: str, password: str) -> bool:
         """
-        Authenticate with Garmin Connect
+        Authenticate with Garmin Connect using token caching
         
         Args:
             email: Garmin Connect email
@@ -45,20 +45,43 @@ class GarminService:
         if not GARMIN_AVAILABLE:
             raise ImportError("garminconnect package not installed")
             
+        # Create a safe token directory based on the user's email
+        token_dir = Path(f"/app/.garmin_tokens/{email.replace('@', '_')}")
+        token_dir.mkdir(parents=True, exist_ok=True)
+
+        # Try to use cached tokens first to prevent 429 login limits
+        if list(token_dir.glob("*.json")):
+            try:
+                self.api = Garmin()
+                self.api.login(str(token_dir))
+                self.authenticated = True
+                logger.info(f"Successfully authenticated using cached tokens: {email}")
+                return True
+            except Exception as e:
+                logger.warning(f"Cached tokens expired or invalid, attempting fresh login: {e}")
+                # Fall through to fresh login
+                
+        # Fresh login if no tokens or if tokens expired
         try:
             self.api = Garmin(email=email, password=password, is_cn=False)
             login_result = self.api.login()
             
-            # Handle MFA if needed (not implemented in web version)
-            if isinstance(login_result, tuple):
-                result1, _ = login_result
-                if result1 == "needs_mfa":
-                    raise GarminConnectAuthenticationError("MFA required - not supported in web version")
+            # Save the new tokens to the container's disk for next time
+            try:
+                self.api.garth.dump(str(token_dir))
+            except AttributeError:
+                # Handle different garminconnect library versions safely
+                import garth
+                garth.save(str(token_dir))
             
             self.authenticated = True
-            logger.info(f"Successfully authenticated with Garmin Connect: {email}")
+            logger.info(f"Successfully authenticated with fresh login: {email}")
             return True
             
+        except GarminConnectTooManyRequestsError:
+            logger.error("Garmin rate limit (429) hit during login.")
+            self.authenticated = False
+            raise ValueError("Garmin rate limit reached. Please wait 5-10 minutes and try again.")
         except GarminConnectAuthenticationError as e:
             logger.error(f"Garmin authentication failed: {e}")
             self.authenticated = False
