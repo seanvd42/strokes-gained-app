@@ -49,6 +49,15 @@ export const api = {
     getDashboard: (params?: any) => apiClient.get('/api/shots/dashboard', { params }),
     getSummary: (params?: any) => apiClient.get('/api/shots/summary', { params }),
   },
+
+  // Garmin Connect
+  garmin: {
+    checkAvailable: () => apiClient.get('/api/garmin/available'),
+    connect: (email: string, password: string) =>
+      apiClient.post('/api/garmin/connect', { email, password }),
+    fetchRounds: (email: string, password: string, count: number = 5, benchmark: string = 'pga_tour') =>
+      apiClient.post('/api/garmin/fetch', { email, password, count, benchmark }),
+  },
 }
 
 export default apiClient
