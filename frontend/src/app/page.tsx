@@ -1,239 +1,359 @@
 'use client'
 
-import Link from 'next/link'
-import { TrendingUp, Target, BarChart3, Lock, Zap, Globe } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { api } from '@/lib/api'
+import { Upload, FileJson, AlertCircle, CheckCircle, Info, Wifi, Download } from 'lucide-react'
 
-export default function LandingPage() {
+export default function ImportPage() {
+  const router = useRouter()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+  const [benchmark, setBenchmark] = useState('pga_tour')
+  const [importCount, setImportCount] = useState(0)
+  const [importMethod, setImportMethod] = useState<'garmin' | 'file'>('garmin')
+  const [garminAvailable, setGarminAvailable] = useState(true)
+  
+  // Garmin state
+  const [garminEmail, setGarminEmail] = useState('')
+  const [garminPassword, setGarminPassword] = useState('')
+  const [roundCount, setRoundCount] = useState(5)
+  const [fetchingRounds, setFetchingRounds] = useState(false)
+  const [roundsFetched, setRoundsFetched] = useState(0)
+
+  useEffect(() => {
+    checkGarminAvailability()
+  }, [])
+
+  const checkGarminAvailability = async () => {
+    try {
+      const response = await api.garmin.checkAvailable()
+      setGarminAvailable(response.data.available)
+      if (!response.data.available) {
+        setImportMethod('file')
+      }
+    } catch (err) {
+      console.error('Failed to check Garmin availability:', err)
+      setGarminAvailable(false)
+      setImportMethod('file')
+    }
+  }
+
+  const handleGarminFetch = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setFetchingRounds(true)
+    setError('')
+    setSuccess(false)
+
+    try {
+      const response = await api.garmin.fetchRounds(
+        garminEmail,
+        garminPassword,
+        roundCount,
+        benchmark
+      )
+
+      if (response.data.success) {
+        setRoundsFetched(response.data.rounds_fetched)
+        setImportCount(response.data.shots_imported)
+        setSuccess(true)
+        
+        // Redirect to dashboard after 3 seconds
+        setTimeout(() => {
+          router.push('/dashboard')
+        }, 3000)
+      }
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to fetch from Garmin Connect'
+      setError(errorMessage)
+    } finally {
+      setFetchingRounds(false)
+    }
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setLoading(true)
+    setError('')
+    setSuccess(false)
+
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      
+      // Validate data structure
+      if (!Array.isArray(data)) {
+        throw new Error('Invalid file format. Expected an array of shots.')
+      }
+
+      // Import shots
+      const response = await api.shots.bulkImport(data, benchmark)
+      setImportCount(response.data.length)
+      setSuccess(true)
+      
+      // Redirect to dashboard after 2 seconds
+      setTimeout(() => {
+        router.push('/dashboard')
+      }, 2000)
+    } catch (err: any) {
+      setError(err.message || 'Failed to import data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const sampleData = [
+    {
+      shot_date: "2024-01-15",
+      hole_number: 1,
+      shot_number: 1,
+      club: "Driver",
+      distance: 280,
+      start_position: "tee_box",
+      end_position: "fairway",
+      start_distance_to_hole: 400,
+      end_distance_to_hole: 120
+    },
+    {
+      shot_date: "2024-01-15",
+      hole_number: 1,
+      shot_number: 2,
+      club: "9 Iron",
+      distance: 120,
+      start_position: "fairway",
+      end_position: "green",
+      start_distance_to_hole: 120,
+      end_distance_to_hole: 15
+    }
+  ]
+
+  const downloadSample = () => {
+    const blob = new Blob([JSON.stringify(sampleData, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'sample-shots.json'
+    a.click()
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-sage-50 via-white to-sage-50">
-      {/* Header */}
-      <header className="border-b border-sage-100 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-        <nav className="container mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Target className="w-8 h-8 text-golf-fairway" />
-            <span className="text-2xl font-display font-bold text-sage-900">
-              Strokes Gained
+    <div className="max-w-4xl mx-auto animate-fade-in">
+      <div className="mb-8">
+        <h1 className="text-4xl font-display font-bold text-sage-900">Import Data</h1>
+        <p className="text-sage-600 font-body mt-1">
+          Connect to Garmin or upload your golf shot data
+        </p>
+      </div>
+
+      {/* Method Selector */}
+      <div className="card mb-8">
+        <div className="flex gap-4 mb-6">
+          <button
+            onClick={() => setImportMethod('garmin')}
+            disabled={!garminAvailable}
+            className={`flex-1 py-3 px-4 rounded-lg font-display font-semibold transition-all ${
+              importMethod === 'garmin'
+                ? 'bg-golf-fairway text-white'
+                : 'bg-sage-100 text-sage-700 hover:bg-sage-200'
+            } ${!garminAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <Wifi className="w-5 h-5 inline mr-2" />
+            Garmin Connect
+          </button>
+          <button
+            onClick={() => setImportMethod('file')}
+            className={`flex-1 py-3 px-4 rounded-lg font-display font-semibold transition-all ${
+              importMethod === 'file'
+                ? 'bg-golf-fairway text-white'
+                : 'bg-sage-100 text-sage-700 hover:bg-sage-200'
+            }`}
+          >
+            <FileJson className="w-5 h-5 inline mr-2" />
+            Upload File
+          </button>
+        </div>
+
+        {/* Benchmark Selection */}
+        <div className="mb-6">
+          <label className="block text-sm font-display font-semibold text-sage-700 mb-2">
+            Benchmark Comparison
+          </label>
+          <select
+            value={benchmark}
+            onChange={(e) => setBenchmark(e.target.value)}
+            className="input-field max-w-xs"
+            disabled={loading || fetchingRounds}
+          >
+            <option value="pga_tour">PGA Tour</option>
+            <option value="scratch">Scratch Golfer</option>
+            <option value="bogey">Bogey Golfer</option>
+          </select>
+          <p className="text-sm text-sage-500 font-body mt-1">
+            Choose the skill level to compare your shots against
+          </p>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <span className="font-body">{error}</span>
+          </div>
+        )}
+
+        {success && (
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6 flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 flex-shrink-0" />
+            <span className="font-body">
+              {importMethod === 'garmin' 
+                ? `Successfully imported ${roundsFetched} round(s) with ${importCount} shots!`
+                : `Successfully imported ${importCount} shots!`
+              } Redirecting to dashboard...
             </span>
           </div>
-          <div className="flex items-center gap-4">
-            <Link 
-              href="/signin" 
-              className="text-sage-700 hover:text-golf-fairway font-display font-semibold transition-colors"
+        )}
+
+        {/* Garmin Connect Form */}
+        {importMethod === 'garmin' && (
+          <form onSubmit={handleGarminFetch} className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <div className="flex items-start gap-3">
+                <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-blue-800 font-body">
+                  <p className="font-semibold mb-1">Connect to your Garmin account</p>
+                  <p>Enter your Garmin Connect credentials to automatically fetch your recent golf rounds. Your credentials are only used for this import and are not stored.</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-display font-semibold text-sage-700 mb-2">
+                Garmin Email
+              </label>
+              <input
+                type="email"
+                value={garminEmail}
+                onChange={(e) => setGarminEmail(e.target.value)}
+                className="input-field"
+                placeholder="your@email.com"
+                required
+                disabled={fetchingRounds}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-display font-semibold text-sage-700 mb-2">
+                Garmin Password
+              </label>
+              <input
+                type="password"
+                value={garminPassword}
+                onChange={(e) => setGarminPassword(e.target.value)}
+                className="input-field"
+                placeholder="••••••••"
+                required
+                disabled={fetchingRounds}
+              />
+              <p className="text-xs text-sage-500 font-body mt-1">
+                If you use Google/Apple sign-in, set a Garmin password in your account settings first.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-display font-semibold text-sage-700 mb-2">
+                Number of Recent Rounds
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={roundCount}
+                onChange={(e) => setRoundCount(parseInt(e.target.value))}
+                className="input-field max-w-xs"
+                disabled={fetchingRounds}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={fetchingRounds || !garminEmail || !garminPassword}
+              className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Sign In
-            </Link>
-            <Link 
-              href="/signup" 
-              className="btn-primary"
-            >
-              Get Started
-            </Link>
+              {fetchingRounds ? (
+                <>
+                  <div className="spinner inline-block w-5 h-5 mr-2"></div>
+                  Fetching from Garmin...
+                </>
+              ) : (
+                <>
+                  <Download className="w-5 h-5 inline mr-2" />
+                  Fetch from Garmin Connect
+                </>
+              )}
+            </button>
+          </form>
+        )}
+
+        {/* File Upload */}
+        {importMethod === 'file' && (
+          <div className="border-2 border-dashed border-sage-300 rounded-xl p-12 text-center hover:border-golf-fairway transition-colors">
+            <Upload className="w-16 h-16 text-sage-400 mx-auto mb-4" />
+            <h3 className="text-xl font-display font-bold text-sage-900 mb-2">
+              Upload JSON File
+            </h3>
+            <p className="text-sage-600 font-body mb-6">
+              Select a JSON file containing your shot data
+            </p>
+            <label className="btn-primary inline-flex items-center gap-2 cursor-pointer">
+              <FileJson className="w-5 h-5" />
+              {loading ? 'Uploading...' : 'Choose File'}
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleFileUpload}
+                disabled={loading}
+                className="hidden"
+              />
+            </label>
           </div>
-        </nav>
-      </header>
+        )}
+      </div>
 
-      {/* Hero Section */}
-      <section className="container mx-auto px-6 py-20 lg:py-32">
-        <div className="max-w-4xl mx-auto text-center stagger-children">
-          <h1 className="text-5xl lg:text-7xl font-display font-black text-sage-900 mb-6 leading-tight">
-            Transform Your Golf Game with{' '}
-            <span className="text-golf-fairway">Data-Driven Insights</span>
-          </h1>
-          <p className="text-xl lg:text-2xl text-sage-600 mb-10 font-body leading-relaxed max-w-2xl mx-auto">
-            Professional-grade strokes gained analysis at your fingertips. 
-            Understand exactly where you're gaining—and losing—strokes on the course.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/signup" className="btn-primary text-lg px-8 py-4">
-              Start Analyzing Free
-            </Link>
-            <Link href="#features" className="btn-outline text-lg px-8 py-4">
-              See How It Works
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Grid */}
-      <section id="features" className="container mx-auto px-6 py-20 bg-white">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-4xl lg:text-5xl font-display font-bold text-center mb-4 text-sage-900">
-            Everything You Need to Improve
-          </h2>
-          <p className="text-xl text-sage-600 text-center mb-16 font-body">
-            Professional analytics, designed for every golfer
-          </p>
-          
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {/* Feature 1 */}
-            <div className="card group hover:border-golf-green-200">
-              <div className="w-14 h-14 bg-golf-green-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-golf-green-100 transition-colors">
-                <TrendingUp className="w-7 h-7 text-golf-fairway" />
-              </div>
-              <h3 className="text-xl font-display font-bold mb-3 text-sage-900">
-                Strokes Gained Analysis
+      {/* File Format Instructions */}
+      {importMethod === 'file' && (
+        <div className="card bg-blue-50 border-blue-200">
+          <div className="flex items-start gap-3">
+            <Info className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="text-lg font-display font-bold text-blue-900 mb-2">
+                Data Format Instructions
               </h3>
-              <p className="text-sage-600 font-body leading-relaxed">
-                See exactly where you gain and lose strokes compared to PGA Tour, 
-                scratch, and bogey golfer benchmarks.
+              <p className="text-blue-800 font-body mb-4">
+                Your JSON file should contain an array of shot objects with the following fields:
               </p>
-            </div>
-
-            {/* Feature 2 */}
-            <div className="card group hover:border-golf-green-200">
-              <div className="w-14 h-14 bg-golf-green-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-golf-green-100 transition-colors">
-                <BarChart3 className="w-7 h-7 text-golf-fairway" />
-              </div>
-              <h3 className="text-xl font-display font-bold mb-3 text-sage-900">
-                Interactive Dashboard
-              </h3>
-              <p className="text-sage-600 font-body leading-relaxed">
-                Visualize your performance with beautiful charts, detailed shot 
-                tables, and comprehensive summary metrics.
-              </p>
-            </div>
-
-            {/* Feature 3 */}
-            <div className="card group hover:border-golf-green-200">
-              <div className="w-14 h-14 bg-golf-green-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-golf-green-100 transition-colors">
-                <Zap className="w-7 h-7 text-golf-fairway" />
-              </div>
-              <h3 className="text-xl font-display font-bold mb-3 text-sage-900">
-                Garmin Integration
-              </h3>
-              <p className="text-sage-600 font-body leading-relaxed">
-                Seamlessly import shot data from your Garmin devices. 
-                Support for Approach S70, CT10 sensors, and more.
-              </p>
-            </div>
-
-            {/* Feature 4 */}
-            <div className="card group hover:border-golf-green-200">
-              <div className="w-14 h-14 bg-golf-green-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-golf-green-100 transition-colors">
-                <Lock className="w-7 h-7 text-golf-fairway" />
-              </div>
-              <h3 className="text-xl font-display font-bold mb-3 text-sage-900">
-                Secure & Private
-              </h3>
-              <p className="text-sage-600 font-body leading-relaxed">
-                Your data is protected with enterprise-grade security. 
-                Row-level isolation ensures your stats stay yours.
-              </p>
-            </div>
-
-            {/* Feature 5 */}
-            <div className="card group hover:border-golf-green-200">
-              <div className="w-14 h-14 bg-golf-green-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-golf-green-100 transition-colors">
-                <Target className="w-7 h-7 text-golf-fairway" />
-              </div>
-              <h3 className="text-xl font-display font-bold mb-3 text-sage-900">
-                Smart Filtering
-              </h3>
-              <p className="text-sage-600 font-body leading-relaxed">
-                Filter by date ranges, benchmarks, and clubs to identify 
-                specific areas for improvement.
-              </p>
-            </div>
-
-            {/* Feature 6 */}
-            <div className="card group hover:border-golf-green-200">
-              <div className="w-14 h-14 bg-golf-green-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-golf-green-100 transition-colors">
-                <Globe className="w-7 h-7 text-golf-fairway" />
-              </div>
-              <h3 className="text-xl font-display font-bold mb-3 text-sage-900">
-                Cloud-Ready
-              </h3>
-              <p className="text-sage-600 font-body leading-relaxed">
-                Access your data anywhere. Built on modern cloud infrastructure 
-                for reliability and performance.
-              </p>
+              <ul className="list-disc list-inside space-y-1 text-blue-800 font-body mb-4">
+                <li><code className="bg-blue-100 px-1 rounded">shot_date</code> - Date in YYYY-MM-DD format</li>
+                <li><code className="bg-blue-100 px-1 rounded">hole_number</code> - Hole number (1-18)</li>
+                <li><code className="bg-blue-100 px-1 rounded">shot_number</code> - Shot sequence number</li>
+                <li><code className="bg-blue-100 px-1 rounded">club</code> - Club used (e.g., "Driver", "7 Iron")</li>
+                <li><code className="bg-blue-100 px-1 rounded">distance</code> - Shot distance in yards</li>
+                <li><code className="bg-blue-100 px-1 rounded">start_position</code> - Starting lie (tee_box, fairway, rough, sand, green)</li>
+                <li><code className="bg-blue-100 px-1 rounded">end_position</code> - Ending lie</li>
+                <li><code className="bg-blue-100 px-1 rounded">start_distance_to_hole</code> - Starting distance to hole</li>
+                <li><code className="bg-blue-100 px-1 rounded">end_distance_to_hole</code> - Ending distance to hole</li>
+              </ul>
+              <button
+                onClick={downloadSample}
+                className="btn-secondary text-sm"
+              >
+                Download Sample File
+              </button>
             </div>
           </div>
         </div>
-      </section>
-
-      {/* How It Works */}
-      <section className="container mx-auto px-6 py-20">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-4xl lg:text-5xl font-display font-bold text-center mb-16 text-sage-900">
-            Three Steps to Better Golf
-          </h2>
-          
-          <div className="grid md:grid-cols-3 gap-12">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-golf-fairway text-white rounded-full flex items-center justify-center text-2xl font-display font-bold mx-auto mb-6">
-                1
-              </div>
-              <h3 className="text-2xl font-display font-bold mb-3 text-sage-900">
-                Import Your Data
-              </h3>
-              <p className="text-sage-600 font-body leading-relaxed">
-                Upload shot data from your Garmin device or manually enter 
-                your rounds.
-              </p>
-            </div>
-            
-            <div className="text-center">
-              <div className="w-16 h-16 bg-golf-fairway text-white rounded-full flex items-center justify-center text-2xl font-display font-bold mx-auto mb-6">
-                2
-              </div>
-              <h3 className="text-2xl font-display font-bold mb-3 text-sage-900">
-                Analyze Performance
-              </h3>
-              <p className="text-sage-600 font-body leading-relaxed">
-                Our engine calculates strokes gained for every shot against 
-                professional benchmarks.
-              </p>
-            </div>
-            
-            <div className="text-center">
-              <div className="w-16 h-16 bg-golf-fairway text-white rounded-full flex items-center justify-center text-2xl font-display font-bold mx-auto mb-6">
-                3
-              </div>
-              <h3 className="text-2xl font-display font-bold mb-3 text-sage-900">
-                Improve Your Game
-              </h3>
-              <p className="text-sage-600 font-body leading-relaxed">
-                Identify weaknesses, track progress, and make data-driven 
-                practice decisions.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="bg-gradient-to-br from-golf-green-600 to-golf-green-700 py-20">
-        <div className="container mx-auto px-6 text-center">
-          <h2 className="text-4xl lg:text-5xl font-display font-bold text-white mb-6">
-            Ready to Lower Your Scores?
-          </h2>
-          <p className="text-xl text-golf-green-50 mb-10 font-body max-w-2xl mx-auto">
-            Join golfers who are using data to gain strokes on every round.
-          </p>
-          <Link 
-            href="/signup" 
-            className="inline-block bg-white text-golf-fairway hover:bg-sage-50 font-display font-bold text-lg px-10 py-4 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
-          >
-            Create Free Account
-          </Link>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-sage-900 text-sage-100 py-12">
-        <div className="container mx-auto px-6">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="flex items-center gap-2 mb-4 md:mb-0">
-              <Target className="w-6 h-6 text-golf-green-400" />
-              <span className="text-xl font-display font-bold">Strokes Gained</span>
-            </div>
-            <div className="text-sage-400 font-body">
-              © 2024 Strokes Gained. All rights reserved.
-            </div>
-          </div>
-        </div>
-      </footer>
+      )}
     </div>
   )
 }
