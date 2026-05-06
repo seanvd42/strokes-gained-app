@@ -10,6 +10,7 @@ from app.services.garmin_parser import parse_garmin_round
 from app.services.database import db_service
 from app.core.strokes_gained import StrokesGainedCalculator
 import logging
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -77,15 +78,17 @@ async def connect_garmin(
             )
     
     except ValueError as e:
+        logger.error(f"Garmin auth ValueError: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
+            detail=str(e) or "Invalid Garmin credentials"
         )
     except Exception as e:
-        logger.error(f"Garmin connection error: {e}")
+        logger.error(f"Garmin connection error: {type(e).__name__}: {e}", exc_info=True)
+        error_msg = str(e) or f"Unexpected error: {type(e).__name__}"
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to connect to Garmin: {str(e)}"
+            detail=f"Failed to connect to Garmin: {error_msg}"
         )
 
 
@@ -193,11 +196,20 @@ async def fetch_garmin_rounds(
     
     except HTTPException:
         raise
+    except ValueError as e:
+        logger.error(f"Garmin fetch ValueError: {e}", exc_info=True)
+        error_msg = str(e) or "Invalid request parameters"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg
+        )
     except Exception as e:
-        logger.error(f"Error fetching Garmin rounds: {e}")
+        logger.error(f"Error fetching Garmin rounds: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        error_msg = str(e) or f"Unexpected error: {type(e).__name__}"
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch rounds from Garmin: {str(e)}"
+            detail=f"Failed to fetch rounds from Garmin: {error_msg}"
         )
 
 

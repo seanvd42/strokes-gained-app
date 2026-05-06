@@ -1,10 +1,12 @@
 """
 Garmin Connect service for fetching golf data
-Based on the golf strokes gained toolkit garmin_fetch.py
+Enhanced with token caching and rate limit handling
 """
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 import logging
+import time
+from datetime import datetime, timedelta
 
 try:
     from garminconnect import (
@@ -17,11 +19,16 @@ try:
     GARMIN_AVAILABLE = True
 except ImportError:
     GARMIN_AVAILABLE = False
+    GarthHTTPError = Exception  # Fallback for type hints
 
 logger = logging.getLogger(__name__)
 
 # Garmin API endpoints
 _GCS = "/gcs-golfcommunity/api/v2"
+
+# Token cache directory
+TOKEN_CACHE_DIR = Path("/tmp/garmin_tokens")
+TOKEN_CACHE_DIR.mkdir(exist_ok=True)
 
 
 class GarminService:
@@ -30,10 +37,80 @@ class GarminService:
     def __init__(self):
         self.api: Optional[Garmin] = None
         self.authenticated = False
+        self.email = None
         
+    def _get_token_path(self, email: str) -> Path:
+        """Get path to cached token file for user"""
+        safe_email = email.replace("@", "_at_").replace(".", "_")
+        return TOKEN_CACHE_DIR / f"garmin_{safe_email}.pickle"
+    
+    def _load_cached_session(self, email: str) -> bool:
+        """
+        Try to load cached Garmin session tokens using the same pattern as garmin_fetch.py
+        
+        Returns:
+            True if tokens loaded and valid, False otherwise
+        """
+        # Check if token directory has any .json files (garth saves tokens as JSON)
+        token_files = list(TOKEN_CACHE_DIR.glob("*.json"))
+        if not token_files:
+            logger.info("No cached tokens found")
+            return False
+        
+        try:
+            # Try to login with cached tokens (garmin_fetch.py pattern)
+            # First try passing token directory path
+            try:
+                self.api = Garmin()
+                self.api.login(str(TOKEN_CACHE_DIR))
+                logger.info("Loaded cached session with token directory")
+            except TypeError:
+                # Fallback: try login() with no args (auto-loads from default location)
+                self.api = Garmin()
+                self.api.login()
+                logger.info("Loaded cached session with default login")
+            
+            # Verify session works
+            try:
+                self.api.get_user_summary(datetime.now().isoformat())
+                self.authenticated = True
+                self.email = email
+                logger.info(f"Successfully using cached Garmin session for {email}")
+                return True
+            except Exception as verify_error:
+                logger.warning(f"Cached session invalid: {verify_error}")
+                # Clear old tokens
+                for token_file in token_files:
+                    token_file.unlink()
+                return False
+            
+        except (FileNotFoundError, GarthHTTPError, Exception) as e:
+            logger.warning(f"Failed to load cached session: {e}")
+            # Clear old tokens
+            for token_file in TOKEN_CACHE_DIR.glob("*.json"):
+                try:
+                    token_file.unlink()
+                except:
+                    pass
+            return False
+    
+    def _save_session(self, email: str):
+        """Save Garmin session tokens to cache"""
+        try:
+            # Use garth's dump method to save tokens to directory
+            self.api.garth.dump(str(TOKEN_CACHE_DIR))
+            logger.info(f"Saved session tokens for {email} to {TOKEN_CACHE_DIR}")
+        except AttributeError:
+            # Fallback for older garminconnect versions
+            try:
+                self.api.garth_client.dump(str(TOKEN_CACHE_DIR))
+                logger.info(f"Saved session tokens (via garth_client) for {email}")
+            except Exception as e:
+                logger.warning(f"Failed to save session: {e}")
+    
     def authenticate(self, email: str, password: str) -> bool:
         """
-        Authenticate with Garmin Connect using token caching
+        Authenticate with Garmin Connect (uses cached tokens if available)
         
         Args:
             email: Garmin Connect email
@@ -44,58 +121,94 @@ class GarminService:
         """
         if not GARMIN_AVAILABLE:
             raise ImportError("garminconnect package not installed")
-            
-        # Create a safe token directory based on the user's email
-        token_dir = Path(f"/app/.garmin_tokens/{email.replace('@', '_')}")
-        token_dir.mkdir(parents=True, exist_ok=True)
-
-        # Try to use cached tokens first to prevent 429 login limits
-        if list(token_dir.glob("*.json")):
-            try:
-                self.api = Garmin()
-                self.api.login(str(token_dir))
-                self.authenticated = True
-                logger.info(f"Successfully authenticated using cached tokens: {email}")
-                return True
-            except Exception as e:
-                logger.warning(f"Cached tokens expired or invalid, attempting fresh login: {e}")
-                # Fall through to fresh login
-                
-        # Fresh login if no tokens or if tokens expired
-        try:
-            self.api = Garmin(email=email, password=password, is_cn=False)
-            login_result = self.api.login()
-            
-            # Save the new tokens to the container's disk for next time
-            try:
-                self.api.garth.dump(str(token_dir))
-            except AttributeError:
-                # Handle different garminconnect library versions safely
-                import garth
-                garth.save(str(token_dir))
-            
-            self.authenticated = True
-            logger.info(f"Successfully authenticated with fresh login: {email}")
+        
+        # Try to use cached session first
+        if self._load_cached_session(email):
+            logger.info("Using cached Garmin session")
             return True
+        
+        # Fresh login required
+        try:
+            logger.info(f"Performing fresh Garmin login for: {email}")
             
-        except GarminConnectTooManyRequestsError:
-            logger.error("Garmin rate limit (429) hit during login.")
-            self.authenticated = False
-            raise ValueError("Garmin rate limit reached. Please wait 5-10 minutes and try again.")
+            # Add retry logic for rate limiting
+            max_retries = 3
+            retry_delay = 2
+            
+            for attempt in range(max_retries):
+                try:
+                    # Create fresh Garmin instance for each attempt
+                    self.api = Garmin(email=email, password=password, is_cn=False)
+                    self.api.login()
+                    
+                    self.authenticated = True
+                    self.email = email
+                    
+                    # Save session for future use
+                    self._save_session(email)
+                    
+                    logger.info(f"Successfully authenticated with Garmin Connect: {email}")
+                    return True
+                    
+                except (GarminConnectTooManyRequestsError, GarthHTTPError) as e:
+                    # Check if it's a 429 error
+                    error_str = str(e)
+                    if "429" in error_str or "Too Many Requests" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                            logger.warning(f"Rate limited (429), waiting {wait_time}s before retry {attempt+1}/{max_retries}")
+                            time.sleep(wait_time)
+                            # Will create fresh Garmin instance on next loop iteration
+                            continue
+                        else:
+                            raise ValueError("Garmin rate limit exceeded. Your IP has been temporarily blocked by Garmin. Please wait 15-30 minutes before trying again.")
+                    else:
+                        raise
+                        
         except GarminConnectAuthenticationError as e:
             logger.error(f"Garmin authentication failed: {e}")
             self.authenticated = False
             raise ValueError("Invalid Garmin credentials")
         except Exception as e:
-            logger.error(f"Garmin authentication error: {e}")
+            logger.error(f"Garmin authentication error: {type(e).__name__}: {e}", exc_info=True)
             self.authenticated = False
             raise
     
-    def _connectapi(self, path: str, **params) -> Dict:
-        """Helper to call Garmin Connect API"""
+    def _connectapi_with_retry(self, path: str, max_retries: int = 3, **params) -> Dict:
+        """
+        Call Garmin Connect API with retry logic for rate limiting
+        
+        Args:
+            path: API endpoint path
+            max_retries: Maximum number of retry attempts
+            **params: Query parameters
+            
+        Returns:
+            API response dict
+        """
         if not self.authenticated or not self.api:
             raise ValueError("Not authenticated with Garmin Connect")
-        return self.api.connectapi(path, params=params)
+        
+        for attempt in range(max_retries):
+            try:
+                return self.api.connectapi(path, params=params)
+            except GarminConnectTooManyRequestsError:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** (attempt + 1)  # 2, 4, 8 seconds
+                    logger.warning(f"Rate limited, waiting {wait_time}s before retry {attempt+1}/{max_retries}")
+                    time.sleep(wait_time)
+                else:
+                    raise ValueError("Garmin API rate limit exceeded. Please wait a few minutes and try again.")
+            except Exception as e:
+                if "429" in str(e) or "Too Many Requests" in str(e):
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)
+                        logger.warning(f"Rate limited (429), waiting {wait_time}s before retry {attempt+1}/{max_retries}")
+                        time.sleep(wait_time)
+                    else:
+                        raise ValueError("Garmin API rate limit exceeded. Please wait a few minutes and try again.")
+                else:
+                    raise
     
     def fetch_golf_activities(self, limit: int = 100) -> List[Dict]:
         """
@@ -133,7 +246,7 @@ class GarminService:
             Tuple of (scorecard_id, course_name)
         """
         try:
-            summaries = self._connectapi(
+            summaries = self._connectapi_with_retry(
                 f"{_GCS}/scorecard/summary",
                 **{"per-page": 100, "user-locale": "en"},
             )
@@ -161,7 +274,7 @@ class GarminService:
     def fetch_scorecard_detail(self, scorecard_id: str) -> Optional[Dict]:
         """Fetch full scorecard details"""
         try:
-            return self._connectapi(
+            return self._connectapi_with_retry(
                 f"{_GCS}/scorecard/detail",
                 **{"scorecard-ids": scorecard_id, "include-longest-shot-distance": "true"},
             )
@@ -193,7 +306,10 @@ class GarminService:
         all_hole_shots = []
         for hole_num in hole_numbers:
             try:
-                result = self._connectapi(
+                # Add small delay between hole requests to avoid rate limiting
+                time.sleep(0.2)
+                
+                result = self._connectapi_with_retry(
                     f"{_GCS}/shot/scorecard/{scorecard_id}/hole",
                     **{"hole-numbers": hole_num, "image-size": "IMG_730X730"},
                 )
@@ -223,7 +339,8 @@ class GarminService:
         logger.info(f"Resolving {len(club_ids)} club IDs")
         for cid in club_ids:
             try:
-                result = self._connectapi(f"{_GCS}/club/{cid}")
+                time.sleep(0.1)  # Small delay between club requests
+                result = self._connectapi_with_retry(f"{_GCS}/club/{cid}")
                 if result:
                     name = (result.get("name") or result.get("clubName") or
                             result.get("gearTypeName") or result.get("type") or "")
@@ -254,7 +371,13 @@ class GarminService:
         scorecard_id, course_name = self.fetch_scorecard_id(activity_id, activity_date)
         logger.info(f"Scorecard ID: {scorecard_id}")
         
+        # Add delay between major API calls
+        time.sleep(0.5)
+        
         scorecard = self.fetch_scorecard_detail(scorecard_id)
+        
+        time.sleep(0.5)
+        
         shots = self.fetch_shot_data(scorecard_id, scorecard)
         
         # Collect unique club IDs
@@ -264,6 +387,9 @@ class GarminService:
             for s in h.get("shots", [])
             if s.get("clubId")
         })
+        
+        time.sleep(0.5)
+        
         clubs = self.fetch_clubs(club_ids)
         
         final_name = activity_name or course_name or activity_id
@@ -308,6 +434,11 @@ class GarminService:
                 detail = self.fetch_round_detail(activity_id, date_str, activity_name)
                 detail["startTimeLocal"] = activity.get("startTimeLocal") or ""
                 rounds.append(detail)
+                
+                # Add delay between rounds to avoid rate limiting
+                if len(rounds) < count:
+                    time.sleep(1)
+                    
             except Exception as e:
                 logger.error(f"Failed to fetch round {activity_id}: {e}")
         
